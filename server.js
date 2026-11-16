@@ -5,9 +5,10 @@
    - Realtime messages + typing + presence via Socket.io
    - Voice via WebRTC mesh signalling over Socket.io
    - Invite links: /invite/:code  (preview + join)
-   Storage: data/data.json (JSON file). On Render free the disk is ephemeral —
-   data resets on redeploy/restart. Set up a Postgres/Supabase DATABASE_URL
-   version later if you need permanent storage for a large community.
+   Storage: if DATABASE_URL is set (Supabase Postgres) the whole app state is
+   kept in a single-row jsonb table `kordcord_state` — data survives redeploys
+   and restarts. Without DATABASE_URL it falls back to data/data.json (local dev
+   only: on Render free the disk is ephemeral and resets on redeploy/restart).
 */
 const express = require('express');
 const http = require('http');
@@ -23,21 +24,52 @@ const DATA_FILE = path.join(DATA_DIR, 'data.json');
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
+const DATABASE_URL = process.env.DATABASE_URL || '';
+let storageMode = DATABASE_URL ? 'postgres' : 'json';
+let pgPool = null;
+
 let db;
 function freshDb() { return { users: [], servers: [], members: [], channels: [], messages: [], invites: [] }; }
-function loadDb() {
+function normalizeDb() { for (const k of Object.keys(freshDb())) if (!Array.isArray(db[k])) db[k] = []; }
+function loadDbFromFile() {
   try { db = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); }
-  catch { db = freshDb(); saveDb(); }
-  for (const k of Object.keys(freshDb())) if (!Array.isArray(db[k])) db[k] = [];
+  catch { db = freshDb(); try { fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 1)); } catch {} }
+  normalizeDb();
 }
 let saveTimer = null;
+let pgSaveChain = Promise.resolve();
 function saveDb() {
+  if (pgPool) {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      const snapshot = JSON.stringify(db);
+      pgSaveChain = pgSaveChain
+        .then(() => pgPool.query('UPDATE kordcord_state SET data = $1::jsonb, updated_at = now() WHERE id = 1', [snapshot]))
+        .catch(e => console.error('saveDb(pg):', e.message));
+    }, 100);
+    return;
+  }
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try { fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 1)); } catch (e) { console.error('saveDb', e); }
   }, 50);
 }
-loadDb();
+async function initStorage() {
+  if (!DATABASE_URL) { loadDbFromFile(); return; }
+  const { Pool } = require('pg');
+  const needsSsl = /supabase|sslmode=require/i.test(DATABASE_URL);
+  pgPool = new Pool({ connectionString: DATABASE_URL, ssl: needsSsl ? { rejectUnauthorized: false } : false, max: 3 });
+  await pgPool.query('CREATE TABLE IF NOT EXISTS kordcord_state (id int PRIMARY KEY, data jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())');
+  const r = await pgPool.query('SELECT data FROM kordcord_state WHERE id = 1');
+  if (r.rows.length && r.rows[0].data && typeof r.rows[0].data === 'object') {
+    db = r.rows[0].data; normalizeDb();
+    console.log(`Loaded state from Postgres: ${db.users.length} users, ${db.servers.length} servers`);
+  } else {
+    db = freshDb();
+    await pgPool.query('INSERT INTO kordcord_state (id, data) VALUES (1, $1::jsonb) ON CONFLICT (id) DO NOTHING', [JSON.stringify(db)]);
+    console.log('Initialized empty state in Postgres');
+  }
+}
 
 const id = () => crypto.randomUUID();
 const code = (n = 8) => crypto.randomBytes(12).toString('base64url').slice(0, n);
@@ -100,7 +132,7 @@ function auth(req, res, next) {
   next();
 }
 
-app.get('/api/health', (req, res) => res.json({ ok: true, users: db.users.length, servers: db.servers.length, time: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, users: db.users.length, servers: db.servers.length, storage: storageMode, time: Date.now() }));
 
 app.post('/api/register', (req, res) => {
   const { username, displayName, password } = req.body || {};
@@ -328,5 +360,15 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(PORT, () => console.log(`KordCord running on http://localhost:${PORT}`));
+async function boot() {
+  try { await initStorage(); }
+  catch (e) {
+    console.error('Postgres init failed, falling back to JSON file storage:', e.message);
+    try { await pgPool.end(); } catch {}
+    pgPool = null; storageMode = 'json';
+    loadDbFromFile();
+  }
+  server.listen(PORT, () => console.log(`KordCord running on http://localhost:${PORT} (storage: ${storageMode})`));
+}
+boot();
 module.exports = { app, server };

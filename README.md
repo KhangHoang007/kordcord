@@ -53,9 +53,11 @@ npm test
 ### Lưu ý gói Free của Render
 
 - Server **ngủ sau ~15 phút** không ai dùng; người đầu tiên mở lại phải chờ 30–60 giây để server thức.
-- Ổ đĩa gói Free **không bền**: dữ liệu (`data/data.json`) có thể mất khi Render redeploy/restart.
-  Bản này phù hợp cho nhóm bạn nhỏ thử nghiệm. Khi cần dữ liệu bền vững lâu dài, nâng cấp bước tiếp theo:
-  chuyển storage sang Postgres (Supabase free) — cấu trúc code đã tách riêng ở các hàm `loadDb/saveDb` trong `server.js`.
+- Ổ đĩa gói Free **không bền** — vì vậy hãy đặt biến môi trường **`DATABASE_URL`** (Supabase Postgres,
+  connection string dạng **Session pooler**) trong Render → Environment: dữ liệu sẽ lưu vào bảng
+  `kordcord_state` trong Postgres và **không mất khi redeploy/restart**. Kiểm tra tại `/api/health`:
+  trường `storage` phải là `postgres`. Không có `DATABASE_URL` thì app rơi về file `data/data.json`
+  (chỉ hợp chạy local, trên Render sẽ mất dữ liệu khi restart).
 - Voice dùng STUN công khai của Google; mạng nào chặn UDP/NAT khó có thể cần thêm TURN server.
 
 ## Cấu trúc
