@@ -8,7 +8,11 @@ Chat cùng bạn bè: server riêng, kênh text, kênh voice (WebRTC), tin nhắ
 - Tạo server — tự có sẵn 2 kênh text (`#chung`, `#thong-bao`) + 2 kênh voice
 - Tạo thêm kênh text / voice, tên kênh text tự chuyển không dấu (`Kênh Mới` → `#kenh-moi`)
 - Nhắn tin realtime (Socket.io), báo "đang nhập...", danh sách thành viên + trạng thái online
-- Kênh voice: bấm vào kênh voice → cho phép micro → nói chuyện mesh WebRTC, tắt mic / rời kênh
+- Kênh voice: bấm vào kênh voice → mở **phòng thoại kiểu sân khấu** (ô hình lớn ở giữa,
+  thanh nút điều khiển ở dưới, góc trái dưới hiện "Đã Kết Nối Giọng" — giống Discord):
+  nói chuyện mesh WebRTC, **bật camera 480p**, **chia sẻ màn hình tối đa 720p/30fps**
+  (mọi người trong kênh voice xem trực tiếp), tắt mic / rời kênh. Chuyển sang kênh chat
+  thì voice vẫn giữ, bấm ô trạng thái giọng nói để mở lại sân khấu.
 - **Link mời**: nút `+ Mời` trong server → link dạng `/invite/xxxxxxxx` → gửi bạn bè,
   họ mở link → đăng ký/đăng nhập → tự vào server. Chủ server thu hồi được link cũ.
 - **Chế độ khách (guest)**: mở link mời → chỉ cần gõ tên hiển thị → vào server ngay,
@@ -60,6 +64,6 @@ npm test
 server.js          Backend: API + Socket.io + signalling voice
 public/index.html  Giao diện Discord (1 file, không cần build)
 render.yaml        Cấu hình Render
-test-e2e.js        Test tự động 39 mục (gồm cả chế độ khách)
+test-e2e.js        Test tự động 44 mục (gồm chế độ khách + signalling voice/cam/share)
 data/data.json     Dữ liệu (tự sinh khi chạy, đã gitignore)
 ```

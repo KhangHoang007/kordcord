@@ -291,11 +291,20 @@ io.on('connection', (socket) => {
     if (!voiceRooms.has(channelId)) voiceRooms.set(channelId, new Map());
     const room = voiceRooms.get(channelId);
     const peers = [...room.entries()].map(([sid, u]) => ({ socketId: sid, user: u }));
-    room.set(socket.id, publicUser(user));
+    room.set(socket.id, { ...publicUser(user), camOn: false, sharing: false, muted: false });
     socket.voiceChannelId = channelId;
     socket.emit('voice-peers', { peers });
     socket.to('server:' + ch.serverId).emit('voice-participants', { channelId, participants: [...room.values()] });
-    peers.forEach(p => { const s = io.sockets.sockets.get(p.socketId); if (s) s.emit('voice-user-joined', { socketId: socket.id, user: publicUser(user) }); });
+    peers.forEach(p => { const s = io.sockets.sockets.get(p.socketId); if (s) s.emit('voice-user-joined', { socketId: socket.id, user: room.get(socket.id) }); });
+  });
+  socket.on('voice-state', ({ camOn, sharing, muted }) => {
+    const channelId = socket.voiceChannelId; if (!channelId) return;
+    const room = voiceRooms.get(channelId); if (!room || !room.has(socket.id)) return;
+    const p = room.get(socket.id);
+    p.camOn = !!camOn; p.sharing = !!sharing; p.muted = !!muted;
+    const ch = db.channels.find(c => c.id === channelId);
+    [...room.keys()].filter(sid => sid !== socket.id).forEach(sid => { const s = io.sockets.sockets.get(sid); if (s) s.emit('voice-participant-state', { socketId: socket.id, user: p }); });
+    if (ch) io.to('server:' + ch.serverId).emit('voice-participants', { channelId, participants: [...room.values()] });
   });
   const relay = (ev) => socket.on(ev, ({ to, data }) => { const s = io.sockets.sockets.get(to); if (s) s.emit(ev, { from: socket.id, data }); });
   relay('voice-offer'); relay('voice-answer'); relay('voice-ice');

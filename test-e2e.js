@@ -124,6 +124,33 @@ const wait = ms => new Promise(r=>setTimeout(r,ms));
     const guest2 = await api('/api/invite/'+inviteCode+'/guest-join',{method:'POST',body:{displayName:'Khach Thu Hai'}});
     check('guest joins again after re-enable', guest2.status===200);
 
+    // Voice stage signalling: join, peers, cam/share state sync, leave
+    const v1 = io(BASE,{auth:{token:t1}}), v2 = io(BASE,{auth:{token:t2}});
+    await Promise.all([new Promise(r=>v1.on('connect',r)), new Promise(r=>v2.on('connect',r))]);
+    const voiceChan = voices[0].id;
+    const v1Joined = new Promise(r=>v1.on('voice-user-joined',d=>r(d)));
+    v1.emit('voice-join',{channelId:voiceChan});
+    await wait(300);
+    const v2Peers = new Promise(r=>v2.on('voice-peers',d=>r(d)));
+    v2.emit('voice-join',{channelId:voiceChan});
+    const peersData = await Promise.race([v2Peers, wait(3000).then(()=>null)]);
+    check('voice: second joiner gets existing peers list', !!peersData && peersData.peers.length===1);
+    const joinedData = await Promise.race([v1Joined, wait(3000).then(()=>null)]);
+    check('voice: first member notified of joiner', !!joinedData && joinedData.socketId===v2.id);
+    const stateForV1 = new Promise(r=>v1.on('voice-participant-state',d=>{ if(d.user.sharing) r(d); }));
+    v2.emit('voice-state',{camOn:true,sharing:true,muted:false});
+    const st = await Promise.race([stateForV1, wait(3000).then(()=>null)]);
+    check('voice: screen-share state syncs to peers', !!st && st.user.camOn===true && st.user.sharing===true);
+    const stateForV2 = new Promise(r=>v2.on('voice-participant-state',d=>{ if(d.user.muted) r(d); }));
+    v1.emit('voice-state',{camOn:false,sharing:false,muted:true});
+    const st2 = await Promise.race([stateForV2, wait(3000).then(()=>null)]);
+    check('voice: mute state syncs to peers', !!st2 && st2.user.muted===true);
+    const leftEvt = new Promise(r=>v1.on('voice-user-left',d=>r(d)));
+    v2.emit('voice-leave',{});
+    const leftData = await Promise.race([leftEvt, wait(3000).then(()=>null)]);
+    check('voice: leave notifies peers', !!leftData && leftData.socketId===v2.id);
+    v1.close(); v2.close();
+
     // Invite: create new + revoke
     const inv2 = await api(`/api/servers/${sid}/invite`,{method:'POST',token:t1,body:{}});
     check('create second invite', inv2.status===200 && inv2.data.inviteCode!==inviteCode);

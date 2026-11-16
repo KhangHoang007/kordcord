@@ -105,6 +105,30 @@ input{font-family:inherit}
 #inviteLinkBox span{flex:1}
 #copyInviteBtn{background:var(--blurple);color:#fff;padding:7px 12px;border-radius:4px;font-size:13px;font-weight:600;flex-shrink:0}
 select{background:var(--bg3);color:var(--text);border:none;border-radius:4px;padding:11px;width:100%;font-size:15px}
+/* ---------- VOICE STAGE (Discord-like) ---------- */
+#voiceStatus{background:var(--bg4);padding:10px 12px;border-top:1px solid rgba(0,0,0,.25);cursor:pointer}
+#voiceStatus .vsTitle{color:#23a55a;font-weight:700;font-size:13px;display:flex;align-items:center;gap:6px}
+#voiceStatus .vsChan{color:var(--muted);font-size:12px;margin-top:2px}
+#voiceStage{flex:1;display:flex;flex-direction:column;background:#000;min-height:0}
+#stageGrid{flex:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;padding:16px;align-content:center;overflow-y:auto}
+.tile{position:relative;background:#2b2d31;border-radius:10px;aspect-ratio:16/9;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.tile.sharing{grid-column:1/-1;aspect-ratio:auto;height:100%;min-height:300px}
+.tile video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;z-index:0}
+.tile.sharing video{object-fit:contain}
+.tile .tileAvatar{width:84px;height:84px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:700;color:#fff;z-index:1}
+.tile .tileTag{position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.65);color:#fff;font-size:13px;font-weight:600;padding:4px 9px;border-radius:5px;display:flex;gap:6px;align-items:center;z-index:5;max-width:calc(100% - 20px)}
+.tile .tileTag .mutedIco{color:#f23f43}
+.tile.inviteTile{background:linear-gradient(135deg,#3a1d4d,#1e1f22);flex-direction:column;gap:14px;color:var(--text)}
+.tile.inviteTile .big{font-size:44px}
+.tile.inviteTile button{background:rgba(0,0,0,.55);color:#fff;padding:10px 16px;border-radius:6px;font-weight:600;font-size:14px}
+.tile.inviteTile button:hover{background:rgba(0,0,0,.8)}
+#voiceControls{display:flex;justify-content:center;align-items:center;gap:10px;padding:14px;background:#000}
+.vcBtn{width:52px;height:44px;border-radius:9px;background:#2b2d31;color:#fff;font-size:19px;display:flex;align-items:center;justify-content:center;position:relative}
+.vcBtn:hover{background:#3a3d43}
+.vcBtn.off{background:#f23f43}
+.vcBtn.on{background:#23a55a}
+.vcBtn.leave{background:#f23f43;width:60px}
+.vcBtn.leave:hover{background:#d63639}
 ::-webkit-scrollbar{width:8px}::-webkit-scrollbar-thumb{background:#1a1b1e;border-radius:4px}::-webkit-scrollbar-track{background:transparent}
 @media(max-width:820px){#memberCol{display:none}#channelCol{width:200px}}
 </style>
@@ -138,15 +162,11 @@ select{background:var(--bg3);color:var(--text);border:none;border-radius:4px;pad
   <div id="channelCol">
     <div id="serverHeader"><span id="serverName">Chọn server</span><button id="inviteBtn" class="hidden">+ Mời</button></div>
     <div id="channelList"></div>
-    <div id="voicePanel" class="hidden">
-      <h3>🔊 <span id="voicePanelName"></span></h3>
-      <div id="voiceParticipants" style="font-size:14px;color:var(--muted)">Bạn đang trong kênh voice</div>
-      <div class="voiceBtns">
-        <button id="muteBtn">🎤 Tắt mic</button>
-        <button id="leaveVoiceBtn" class="danger">📞 Rời kênh</button>
-      </div>
-      <div id="remoteAudios"></div>
+    <div id="voiceStatus" class="hidden" title="Bấm để mở lại phòng voice">
+      <div class="vsTitle">📶 Đã Kết Nối Giọng</div>
+      <div class="vsChan" id="voiceStatusChan"></div>
     </div>
+    <div id="remoteAudios" class="hidden"></div>
     <div id="userBar">
       <div class="avatar" id="myAvatar">?<span class="dot"></span></div>
       <div><div class="uname" id="myName"></div><div class="ustatus">Trực tuyến</div></div>
@@ -158,6 +178,15 @@ select{background:var(--bg3);color:var(--text);border:none;border-radius:4px;pad
     <div id="messages"></div>
     <div id="typingBar"></div>
     <div id="inputBar"><div id="msgInputWrap"><input id="msgInput" placeholder="Nhắn tin..." maxlength="2000"><button id="sendBtn" title="Gửi">➤</button></div></div>
+    <div id="voiceStage" class="hidden">
+      <div id="stageGrid"></div>
+      <div id="voiceControls">
+        <button class="vcBtn" id="stageMicBtn" title="Tắt / bật mic">🎤</button>
+        <button class="vcBtn" id="stageCamBtn" title="Bật / tắt camera">📷</button>
+        <button class="vcBtn" id="stageShareBtn" title="Chia sẻ màn hình">🖥️</button>
+        <button class="vcBtn leave" id="stageLeaveBtn" title="Rời kênh voice">📞</button>
+      </div>
+    </div>
   </div>
   <div id="memberCol"><h4>THÀNH VIÊN</h4><div id="memberList"></div></div>
 </div>
@@ -294,6 +323,7 @@ function renderChannels(){
 }
 async function selectChannel(cid){
   currentChannel=channels.find(c=>c.id===cid); if(!currentChannel) return;
+  showChat();
   renderChannels(); $('#chatChannelName').textContent=currentChannel.name;
   $('#msgInput').placeholder='Nhắn #'+currentChannel.name+'...';
   const d=await api('/api/servers/'+currentServer.id+'/messages?channelId='+cid);
@@ -350,44 +380,174 @@ async function openInvite(existingCode){
 }
 $('#inviteBtn').onclick=()=>openInvite(null);
 
-/* ---------- VOICE (WebRTC mesh, audio only) ---------- */
-let localStream=null, peers={}, voiceChannel=null, muted=false;
+/* ---------- VOICE STAGE (WebRTC mesh, audio + camera + screen) ---------- */
+let localStream=null, camStream=null, screenStream=null, peers={}, voiceChannel=null;
+let muted=false, camOn=false, sharing=false, stageOpen=false;
+let dummyTrack=null;
+function getDummyTrack(){
+  if(dummyTrack && dummyTrack.readyState==='live') return dummyTrack;
+  const cv=document.createElement('canvas'); cv.width=2; cv.height=2;
+  const ctx=cv.getContext('2d'); ctx.fillStyle='#000'; ctx.fillRect(0,0,2,2);
+  dummyTrack=cv.captureStream(1).getVideoTracks()[0];
+  return dummyTrack;
+}
+function desiredVideoTrack(){ if(sharing && screenStream) return screenStream.getVideoTracks()[0]; if(camOn && camStream) return camStream.getVideoTracks()[0]; return getDummyTrack(); }
+async function applyVideoToPeers(){
+  const t=desiredVideoTrack();
+  for(const pc of Object.values(peers)){ const sender=pc.getSenders().find(s=>s.track&&s.track.kind==='video'); if(sender){ try{ await sender.replaceTrack(t); }catch{} } }
+  updateLocalTileVideo();
+}
+function emitVoiceState(){ if(socket&&voiceChannel) socket.emit('voice-state',{camOn,sharing,muted}); }
+
+/* ----- stage / chat visibility ----- */
+function showStage(){
+  if(!voiceChannel) return; stageOpen=true;
+  $('#voiceStage').classList.remove('hidden');
+  $('#messages').classList.add('hidden'); $('#typingBar').classList.add('hidden'); $('#inputBar').classList.add('hidden');
+  $('#chatChannelName').textContent=voiceChannel.name; $('#chatHash').textContent='🔊';
+  document.querySelector('#chatHeader .topic').textContent='Kênh thoại — bấm kênh chat bên trái để quay lại nhắn tin, voice vẫn giữ';
+  renderStage();
+}
+function showChat(){
+  stageOpen=false;
+  $('#voiceStage').classList.add('hidden');
+  $('#messages').classList.remove('hidden'); $('#typingBar').classList.remove('hidden'); $('#inputBar').classList.remove('hidden');
+  $('#chatHash').textContent='#';
+  document.querySelector('#chatHeader .topic').textContent='Nhắn tin cùng bạn bè trong server';
+  if(currentChannel) $('#chatChannelName').textContent=currentChannel.name;
+}
+$('#voiceStatus').onclick=showStage;
+
+/* ----- tiles ----- */
+const tiles={}; // key: 'local' or socketId -> {el, video, avatarEl, tagEl, user}
+function ensureTile(key,user,isLocal){
+  if(tiles[key]){ if(user) tiles[key].user=user; return tiles[key]; }
+  const el=document.createElement('div'); el.className='tile';
+  el.innerHTML='<video autoplay playsinline '+(isLocal?'muted':'')+' style="display:none"></video><div class="tileAvatar"></div><div class="tileTag"></div>';
+  const av=el.querySelector('.tileAvatar'); av.style.background=(user&&user.color)||'#5865f2'; av.textContent=user?initials(user.displayName):'?';
+  el.querySelector('video').style.display='none';
+  $('#stageGrid').appendChild(el);
+  tiles[key]={el,video:el.querySelector('video'),avatarEl:av,tagEl:el.querySelector('.tileTag'),user};
+  updateTileTag(key); return tiles[key];
+}
+function updateTileTag(key){
+  const t=tiles[key]; if(!t||!t.user) return;
+  const isMe=key==='local';
+  const m=isMe?muted:t.user.muted;
+  t.tagEl.innerHTML=(m?'<span class="mutedIco">🔇</span>':'')+'<span>'+esc(t.user.displayName)+(isMe?' (bạn)':'')+'</span>'+(t.user.sharing?'<span>📺 đang chia sẻ</span>':'');
+  t.el.classList.toggle('sharing',!!t.user.sharing);
+}
+function removeTile(key){ const t=tiles[key]; if(t){ t.el.remove(); delete tiles[key]; } renderInviteTile(); }
+function renderStage(){
+  if(!voiceChannel) return;
+  ensureTile('local',{...me,muted,camOn,sharing},true);
+  updateTileTag('local'); updateLocalTileVideo(); renderInviteTile();
+}
+function renderInviteTile(){
+  const old=document.getElementById('inviteTile'); if(old) old.remove();
+  if(!voiceChannel) return;
+  if(Object.keys(tiles).length<=1){
+    const el=document.createElement('div'); el.className='tile inviteTile'; el.id='inviteTile';
+    el.innerHTML='<div class="big">🏆</div><div style="color:var(--muted);font-size:14px">Đang một mình trong phòng — mời bạn bè vào cho vui</div>';
+    const b=document.createElement('button'); b.textContent='👥 Mời vào Kênh thoại'; b.onclick=()=>openInvite(null); el.appendChild(b);
+    $('#stageGrid').appendChild(el);
+  }
+}
+function updateLocalTileVideo(){
+  const t=tiles['local']; if(!t) return;
+  const active=(sharing&&screenStream)||(camOn&&camStream);
+  if(active){ t.video.srcObject=active; t.video.style.display='block'; t.avatarEl.style.display='none'; }
+  else { t.video.srcObject=null; t.video.style.display='none'; t.avatarEl.style.display='flex'; }
+  if(t.user){ t.user.camOn=camOn; t.user.sharing=sharing; t.user.muted=muted; updateTileTag('local'); }
+}
+
+/* ----- signalling ----- */
 function setupVoiceSignalling(){
-  socket.on('voice-peers',async({peers:ps})=>{ for(const p of ps) await makePeer(p.socketId,true); });
-  socket.on('voice-user-joined',async({socketId})=>{ /* existing members wait for offer from newcomer */ });
-  socket.on('voice-user-left',({socketId})=>{ closePeer(socketId); });
+  socket.on('voice-peers',async({peers:ps})=>{ for(const p of ps){ ensureTile(p.socketId,p.user,false); await makePeer(p.socketId,true); } renderInviteTile(); });
+  socket.on('voice-user-joined',({socketId,user})=>{ ensureTile(socketId,user,false); renderInviteTile(); });
+  socket.on('voice-user-left',({socketId})=>{ closePeer(socketId); removeTile(socketId); });
+  socket.on('voice-participant-state',({socketId,user})=>{ const t=ensureTile(socketId,user,false); t.user=user; updateTileTag(socketId); });
   socket.on('voice-offer',async({from,data})=>{ const pc=await makePeer(from,false); await pc.setRemoteDescription(data); const ans=await pc.createAnswer(); await pc.setLocalDescription(ans); socket.emit('voice-answer',{to:from,data:pc.localDescription}); });
   socket.on('voice-answer',async({from,data})=>{ const pc=peers[from]; if(pc) await pc.setRemoteDescription(data); });
   socket.on('voice-ice',async({from,data})=>{ const pc=peers[from]; if(pc&&data) try{ await pc.addIceCandidate(data); }catch{} });
-  socket.on('voice-participants',({channelId,participants})=>{ const el=document.getElementById('vu-'+channelId); if(el) el.innerHTML=participants.map(u=>'<div><span class="dot"></span>'+esc(u.displayName)+'</div>').join(''); if(voiceChannel&&voiceChannel.id===channelId) $('#voiceParticipants').textContent=participants.map(u=>u.displayName).join(', ')||'Đang một mình'; });
+  socket.on('voice-participants',({channelId,participants})=>{ const el=document.getElementById('vu-'+channelId); if(el) el.innerHTML=participants.map(u=>'<div><span class="dot"></span>'+esc(u.displayName)+(u.sharing?' 📺':'')+'</div>').join('');
+    if(voiceChannel&&voiceChannel.id===channelId){ participants.forEach(u=>{}); } });
 }
 async function makePeer(socketId,initiator){
   if(peers[socketId]) return peers[socketId];
   const pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
   peers[socketId]=pc;
-  localStream && localStream.getTracks().forEach(t=>pc.addTrack(t,localStream));
+  if(localStream) localStream.getAudioTracks().forEach(t=>pc.addTrack(t,localStream));
+  pc.addTrack(getDummyTrack());
+  // If we already have cam/screen on, put the real video on this new peer right away
+  const want=desiredVideoTrack();
+  if(want!==getDummyTrack()){ const sender=pc.getSenders().find(s=>s.track&&s.track.kind==='video'); if(sender) sender.replaceTrack(want).catch(()=>{}); }
   pc.onicecandidate=e=>{ if(e.candidate) socket.emit('voice-ice',{to:socketId,data:e.candidate}); };
-  pc.ontrack=e=>{ let a=document.getElementById('audio-'+socketId); if(!a){ a=document.createElement('audio'); a.id='audio-'+socketId; a.autoplay=true; $('#remoteAudios').appendChild(a);} a.srcObject=e.streams[0]; };
+  pc.ontrack=e=>{
+    const t=ensureTile(socketId,(tiles[socketId]&&tiles[socketId].user)||null,false);
+    if(e.track.kind==='audio'){
+      let a=document.getElementById('audio-'+socketId); if(!a){ a=document.createElement('audio'); a.id='audio-'+socketId; a.autoplay=true; $('#remoteAudios').appendChild(a);} a.srcObject=new MediaStream([e.track]);
+    } else if(e.track.kind==='video'){
+      t.video.srcObject=new MediaStream([e.track]);
+      const show=()=>{ const hasReal=!(e.track.getSettings&&e.track.getSettings().width<=2); };
+      e.track.onunmute=()=>{ t.video.style.display='block'; t.avatarEl.style.display='none'; };
+      e.track.onmute=()=>{ t.video.style.display='none'; t.avatarEl.style.display='flex'; };
+      // Placeholder (2x2 canvas) also fires ontrack: only reveal video once frames are real-sized
+      const iv=setInterval(()=>{ if(t.video.videoWidth>2){ t.video.style.display='block'; t.avatarEl.style.display='none'; clearInterval(iv); } },400);
+      setTimeout(()=>clearInterval(iv),15000);
+    }
+  };
   if(initiator){ const offer=await pc.createOffer(); await pc.setLocalDescription(offer); socket.emit('voice-offer',{to:socketId,data:pc.localDescription}); }
   return pc;
 }
 function closePeer(socketId){ const pc=peers[socketId]; if(pc){ pc.close(); delete peers[socketId]; } const a=document.getElementById('audio-'+socketId); if(a) a.remove(); }
 async function joinVoice(channel){
+  if(voiceChannel && voiceChannel.id===channel.id){ showStage(); return; }
   if(voiceChannel) leaveVoice();
   try{ localStream=await navigator.mediaDevices.getUserMedia({audio:true}); }
   catch(e){ alert('Không mở được micro. Anh kiểm tra quyền micro của trình duyệt nhé.'); return; }
-  voiceChannel=channel; $('#voicePanel').classList.remove('hidden'); $('#voicePanelName').textContent=channel.name;
+  voiceChannel=channel; muted=false; camOn=false; sharing=false;
+  $('#voiceStatus').classList.remove('hidden'); $('#voiceStatusChan').textContent=channel.name;
+  $('#stageMicBtn').classList.remove('off'); $('#stageMicBtn').textContent='🎤';
+  $('#stageCamBtn').classList.remove('on'); $('#stageShareBtn').classList.remove('on');
   socket.emit('voice-join',{channelId:channel.id});
+  showStage();
 }
+function stopCam(){ if(camStream){ camStream.getTracks().forEach(t=>t.stop()); camStream=null; } camOn=false; }
+function stopShare(){ if(screenStream){ screenStream.getTracks().forEach(t=>t.stop()); screenStream=null; } sharing=false; }
 function leaveVoice(){
   if(!voiceChannel) return;
   socket.emit('voice-leave',{});
   Object.keys(peers).forEach(closePeer); peers={};
+  Object.keys(tiles).forEach(removeTile);
+  stopCam(); stopShare();
   localStream && localStream.getTracks().forEach(t=>t.stop()); localStream=null; voiceChannel=null;
-  $('#voicePanel').classList.add('hidden');
+  $('#voiceStatus').classList.add('hidden');
+  showChat();
 }
-$('#leaveVoiceBtn').onclick=leaveVoice;
-$('#muteBtn').onclick=()=>{ if(!localStream) return; muted=!muted; localStream.getAudioTracks().forEach(t=>t.enabled=!muted); $('#muteBtn').textContent=muted?'🔇 Bật mic':'🎤 Tắt mic'; $('#muteBtn').classList.toggle('on',muted); };
+$('#stageLeaveBtn').onclick=leaveVoice;
+$('#stageMicBtn').onclick=()=>{ if(!localStream) return; muted=!muted; localStream.getAudioTracks().forEach(t=>t.enabled=!muted); $('#stageMicBtn').textContent=muted?'🔇':'🎤'; $('#stageMicBtn').classList.toggle('off',muted); emitVoiceState(); updateLocalTileVideo(); };
+$('#stageCamBtn').onclick=async()=>{
+  if(!voiceChannel) return;
+  if(camOn){ stopCam(); }
+  else{
+    try{ camStream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:640},height:{ideal:480},frameRate:{max:24}}}); camOn=true; }
+    catch(e){ alert('Không mở được camera. Anh kiểm tra quyền camera của trình duyệt nhé.'); return; }
+  }
+  $('#stageCamBtn').classList.toggle('on',camOn);
+  await applyVideoToPeers(); emitVoiceState(); updateLocalTileVideo();
+};
+$('#stageShareBtn').onclick=async()=>{
+  if(!voiceChannel) return;
+  if(sharing){ stopShare(); }
+  else{
+    if(!navigator.mediaDevices.getDisplayMedia){ alert('Trình duyệt này không hỗ trợ chia sẻ màn hình (thường là trên điện thoại). Anh dùng máy tính với Chrome/Edge/Cốc Cốc nhé.'); return; }
+    try{ screenStream=await navigator.mediaDevices.getDisplayMedia({video:{width:{max:1280},height:{max:720},frameRate:{max:30}}}); sharing=true; screenStream.getVideoTracks()[0].onended=async()=>{ if(sharing){ stopShare(); $('#stageShareBtn').classList.remove('on'); await applyVideoToPeers(); emitVoiceState(); updateLocalTileVideo(); } }; }
+    catch(e){ return; /* user cancelled the picker */ }
+  }
+  $('#stageShareBtn').classList.toggle('on',sharing);
+  await applyVideoToPeers(); emitVoiceState(); updateLocalTileVideo();
+};
 
 /* ---------- BOOT ---------- */
 (async()=>{ setMode('login'); await checkInvitePreview();
